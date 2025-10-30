@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Dividends Dashboard</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 20px; }
+    .chart { max-width: 900px; margin-bottom: 40px; }
+  </style>
+</head>
+<body>
+  <h1>Dividends Dashboard</h1>
+  <p>Grand total: <span id="grand-total">—</span> PLN</p>
+
+  <div class="chart">
+    <canvas id="totalsChart"></canvas>
+  </div>
+
+  <label for="stockSelect">Select stock:</label>
+  <select id="stockSelect"></select>
+
+  <div class="chart">
+    <canvas id="timeChart"></canvas>
+  </div>
+
+  <script>
+    async function loadData() {
+      const res = await fetch('/api/dividends');
+      const data = await res.json();
+      document.getElementById('grand-total').textContent = data.grand_total.toFixed(2);
+
+      const stocks = data.stocks;
+      const labels = stocks.map(s => s.symbol);
+      const totals = stocks.map(s => s.total);
+
+      // Totals bar chart
+      const ctx = document.getElementById('totalsChart').getContext('2d');
+      new Chart(ctx, {
+        type: 'bar',
+        data: {
+          labels: labels,
+          datasets: [{ label: 'Total PLN', data: totals, backgroundColor: 'rgba(54,162,235,0.6)' }]
+        },
+        options: { responsive: true }
+      });
+
+      // Populate selector
+      const sel = document.getElementById('stockSelect');
+      sel.innerHTML = '<option value="">-- choose --</option>' + stocks.map(s => `<option value="${s.symbol}">${s.symbol}</option>`).join('');
+
+      const timeCtx = document.getElementById('timeChart').getContext('2d');
+      let timeChart = new Chart(timeCtx, { type: 'line', data: { labels: [], datasets: [{ label: 'Amount PLN', data: [], fill: false, borderColor: 'rgba(255,99,132,0.8)' }] }, options: { responsive: true } });
+
+      sel.addEventListener('change', () => {
+        const symbol = sel.value;
+        const stock = stocks.find(s => s.symbol === symbol);
+        if (!stock) return;
+        const payments = stock.payments.slice().reverse(); // chronological
+        timeChart.data.labels = payments.map(p => p.date);
+        timeChart.data.datasets[0].data = payments.map(p => p.amount);
+        timeChart.update();
+      });
+    }
+
+    loadData().catch(err => console.error(err));
+  </script>
+</body>
+</html>
