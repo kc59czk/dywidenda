@@ -49,22 +49,36 @@ def get_aggregated_data(input_dir='input'):
                 })
                 grand_total += amount
 
-    # Build stocks list with totals
+    # Build stocks list with totals and per-source breakdowns
     stocks = []
+    yearly = defaultdict(lambda: defaultdict(float))  # yearly[year][stock] = total
     for stock, payments in aggregated.items():
         total = sum(p['amount'] for p in payments)
+        # per-source totals
+        per_source = defaultdict(float)
+        for p in payments:
+            per_source[p.get('source', 'unknown')] += p['amount']
+            # yearly aggregation
+            year = int(p['date'][:4]) if isinstance(p['date'], str) else p['date'].year
+            yearly[year][stock] += p['amount']
+
         stocks.append({
             'symbol': stock,
             'total': total,
+            'per_source': dict(per_source),
             'payments': sorted(payments, key=lambda x: x['date'], reverse=True),
         })
 
     # Sort stocks by total desc
     stocks.sort(key=lambda s: s['total'], reverse=True)
 
+    # Build yearly summary list of { year: { stock: total, ... } }
+    yearly_summary = {year: dict(stocks) for year, stocks in sorted(yearly.items())}
+
     return {
         'stocks': stocks,
         'grand_total': grand_total,
+        'yearly': yearly_summary,
     }
 
 

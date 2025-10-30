@@ -18,6 +18,16 @@
     <canvas id="totalsChart"></canvas>
   </div>
 
+  <h3>Totals by source (stacked)</h3>
+  <div class="chart">
+    <canvas id="stackedChart"></canvas>
+  </div>
+
+  <h3>Yearly summary</h3>
+  <div class="chart">
+    <canvas id="yearlyChart"></canvas>
+  </div>
+
   <label for="stockSelect">Select stock:</label>
   <select id="stockSelect"></select>
 
@@ -35,6 +45,16 @@
       const labels = stocks.map(s => s.symbol);
       const totals = stocks.map(s => s.total);
 
+      // Build per-source dataset for stacked chart
+      const allSources = new Set();
+      stocks.forEach(s => Object.keys(s.per_source || {}).forEach(src => allSources.add(src)));
+      const sources = Array.from(allSources);
+      const sourceDatasets = sources.map((src, i) => ({
+        label: src,
+        data: stocks.map(s => s.per_source[src] || 0),
+        backgroundColor: `hsl(${i * 60 % 360} 70% 60% / 0.6)`,
+      }));
+
       // Totals bar chart
       const ctx = document.getElementById('totalsChart').getContext('2d');
       new Chart(ctx, {
@@ -45,6 +65,21 @@
         },
         options: { responsive: true }
       });
+
+      // Stacked per-source chart
+      const stackedCtx = document.getElementById('stackedChart').getContext('2d');
+      new Chart(stackedCtx, {
+        type: 'bar',
+        data: { labels, datasets: sourceDatasets },
+        options: { responsive: true, scales: { x: { stacked: true }, y: { stacked: true } } }
+      });
+
+      // Yearly summary chart
+      const yearlyKeys = Object.keys(data.yearly);
+      const yearlyLabels = yearlyKeys;
+      const yearlyTotals = yearlyKeys.map(y => Object.values(data.yearly[y] || {}).reduce((a,b)=>a+b,0));
+      const yearlyCtx = document.getElementById('yearlyChart').getContext('2d');
+      new Chart(yearlyCtx, { type: 'bar', data: { labels: yearlyLabels, datasets: [{ label: 'Yearly total', data: yearlyTotals, backgroundColor: 'rgba(75,192,192,0.6)' }] }, options: { responsive: true } });
 
       // Populate selector
       const sel = document.getElementById('stockSelect');
