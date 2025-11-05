@@ -1,7 +1,7 @@
 import os
 import glob
 from collections import defaultdict
-from flask import Flask, jsonify, render_template
+from flask import Flask, jsonify, render_template, send_from_directory
 
 # Reuse existing parser. Support running app.py directly (script) or as a package.
 try:
@@ -112,9 +112,59 @@ def create_app(static_folder=None, template_folder=None):
         data = get_aggregated_data()
         return jsonify(data)
 
+    @app.route('/download/all.csv')
+    def download_all():
+        # Build CSV for all payments: symbol,date,amount,source
+        import io
+        import csv as _csv
+
+        data = get_aggregated_data()
+        buf = io.StringIO()
+        writer = _csv.writer(buf)
+        writer.writerow(['symbol', 'date', 'amount', 'source'])
+        for s in data['stocks']:
+            for p in s['payments']:
+                writer.writerow([s['symbol'], p['date'], p['amount'], p.get('source', '')])
+        csv_bytes = buf.getvalue().encode('utf-8')
+        return app.response_class(csv_bytes, mimetype='text/csv', headers={
+            'Content-Disposition': 'attachment; filename="dividends_all.csv"'
+        })
+
+    @app.route('/download/<symbol>.csv')
+    def download_symbol(symbol):
+        import io
+        import csv as _csv
+
+        data = get_aggregated_data()
+        buf = io.StringIO()
+        writer = _csv.writer(buf)
+        writer.writerow(['symbol', 'date', 'amount', 'source'])
+        found = False
+        for s in data['stocks']:
+            if s['symbol'] == symbol:
+                found = True
+                for p in s['payments']:
+                    writer.writerow([s['symbol'], p['date'], p['amount'], p.get('source', '')])
+                break
+        if not found:
+            return ('', 404)
+        csv_bytes = buf.getvalue().encode('utf-8')
+        return app.response_class(csv_bytes, mimetype='text/csv', headers={
+            'Content-Disposition': f'attachment; filename="dividends_{symbol}.csv"'
+        })
+
+    @app.route('/favicon.ico')
+    def favicon():
+        # Serve favicon.ico from the static folder so browsers requesting
+        # /favicon.ico get the file.
+        try:
+            return send_from_directory(app.static_folder, 'favicon.ico')
+        except Exception:
+            return '', 404
+
     return app
 
 
 if __name__ == '__main__':
     app = create_app()
-    app.run(debug=True)
+    app.run(debug=True,host="0.0.0.0")

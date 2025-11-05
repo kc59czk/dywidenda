@@ -4,6 +4,8 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Dividends Dashboard</title>
+  <!-- favicon served from static/favicon.ico -->
+  <link rel="icon" href="{{ url_for('static', filename='favicon.ico') }}" />
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <style>
     body { font-family: Arial, sans-serif; margin: 20px; }
@@ -31,9 +33,20 @@
   <label for="stockSelect">Select stock:</label>
   <select id="stockSelect"></select>
 
+  <div style="margin-top:10px;">
+    <button id="downloadAll">Download all CSV</button>
+    <button id="downloadSymbol" disabled>Download selected CSV</button>
+  </div>
+
   <div class="chart">
     <canvas id="timeChart"></canvas>
   </div>
+
+  <h3>Payments table</h3>
+  <table id="paymentsTable" border="1" cellpadding="6">
+    <thead><tr><th>Date</th><th>Amount</th><th>Source</th></tr></thead>
+    <tbody></tbody>
+  </table>
 
   <script>
     async function loadData() {
@@ -96,6 +109,27 @@
         timeChart.data.labels = payments.map(p => p.date);
         timeChart.data.datasets[0].data = payments.map(p => p.amount);
         timeChart.update();
+
+        // Enable download button
+        document.getElementById('downloadSymbol').disabled = false;
+
+        // Populate payments table
+        const tbody = document.querySelector('#paymentsTable tbody');
+        tbody.innerHTML = '';
+        payments.forEach(p => {
+          const tr = document.createElement('tr');
+          tr.innerHTML = `<td>${p.date}</td><td>${p.amount.toFixed(2)}</td><td>${p.source || ''}</td>`;
+          tbody.appendChild(tr);
+        });
+      });
+
+      // Download handlers
+      document.getElementById('downloadAll').addEventListener('click', () => {
+        window.location = '/download/all.csv';
+      });
+      document.getElementById('downloadSymbol').addEventListener('click', () => {
+        const symbol = document.getElementById('stockSelect').value;
+        if (symbol) window.location = `/download/${symbol}.csv`;
       });
     }
 
