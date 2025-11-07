@@ -7,6 +7,9 @@
   <!-- favicon served from static/favicon.ico -->
   <link rel="icon" href="{{ url_for('static', filename='favicon.ico') }}" />
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <link rel="stylesheet" href="https://cdn.datatables.net/1.13.6/css/jquery.dataTables.min.css">
+  <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+  <script src="https://cdn.datatables.net/1.13.6/js/jquery.dataTables.min.js"></script>
   <style>
     body { font-family: Arial, sans-serif; margin: 20px; }
     .chart { max-width: 900px; margin-bottom: 40px; }
@@ -120,6 +123,24 @@
           const tr = document.createElement('tr');
           tr.innerHTML = `<td>${p.date}</td><td>${p.amount.toFixed(2)}</td><td>${p.source || ''}</td>`;
           tbody.appendChild(tr);
+        });
+
+        $(document).ready(function() {
+          // If table already initialized, destroy then recreate
+          if ($.fn.DataTable.isDataTable('#paymentsTable')) {
+            $('#paymentsTable').DataTable().destroy();
+          }
+          $('#paymentsTable').DataTable({
+            paging: true,
+            pageLength: 25,
+            searching: true,
+            order: [[0, 'desc']], // sort by date desc by default
+            columns: [
+              { title: "Date" },
+              { title: "Amount", type: 'num' },
+              { title: "Source" }
+            ]
+          });
         });
       });
 
