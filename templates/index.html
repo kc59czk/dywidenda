@@ -4,6 +4,15 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Dividends Dashboard</title>
+  <!-- Bootstrap 5 CSS -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+  <!-- DataTables + Bootstrap integration -->
+  <link rel="stylesheet" href="https://cdn.datatables.net/1.13.6/css/dataTables.bootstrap5.min.css">
+  <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+  <script src="https://cdn.datatables.net/1.13.6/js/jquery.dataTables.min.js"></script>
+  <script src="https://cdn.datatables.net/1.13.6/js/dataTables.bootstrap5.min.js"></script>
+  <!-- Bootstrap bundle (includes Popper) -->
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
   <!-- favicon served from static/favicon.ico -->
   <link rel="icon" href="{{ url_for('static', filename='favicon.ico') }}" />
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
@@ -16,40 +25,51 @@
   </style>
 </head>
 <body>
-  <h1>Dividends Dashboard</h1>
-  <p>Grand total: <span id="grand-total">—</span> PLN</p>
+  <div class="container">
+    <div class="d-flex align-items-center justify-content-between my-4">
+      <h1 class="h3">Dividends Dashboard</h1>
+      <div>Grand total: <strong id="grand-total">—</strong> PLN</div>
+    </div>
 
-  <div class="chart">
-    <canvas id="totalsChart"></canvas>
-  </div>
+    <div class="chart mb-4">
+      <canvas id="totalsChart"></canvas>
+    </div>
 
-  <h3>Totals by source (stacked)</h3>
-  <div class="chart">
-    <canvas id="stackedChart"></canvas>
-  </div>
+    <h5>Totals by source (stacked)</h5>
+    <div class="chart mb-4">
+      <canvas id="stackedChart"></canvas>
+      <div id="stackedLegend" class="mt-2"></div>
+    </div>
 
-  <h3>Yearly summary</h3>
-  <div class="chart">
-    <canvas id="yearlyChart"></canvas>
-  </div>
+    <h5>Yearly summary</h5>
+    <div class="chart mb-4">
+      <canvas id="yearlyChart"></canvas>
+    </div>
 
-  <label for="stockSelect">Select stock:</label>
-  <select id="stockSelect"></select>
+    <div class="row mb-3">
+      <div class="col-md-4">
+        <label for="stockSelect" class="form-label">Select stock:</label>
+        <select id="stockSelect" class="form-select"></select>
+      </div>
+      <div class="col-md-8 d-flex align-items-end gap-2">
+        <button id="downloadAll" class="btn btn-outline-primary">Download all CSV</button>
+        <button id="downloadSymbol" class="btn btn-primary" disabled>Download selected CSV</button>
+      </div>
+    </div>
 
-  <div style="margin-top:10px;">
-    <button id="downloadAll">Download all CSV</button>
-    <button id="downloadSymbol" disabled>Download selected CSV</button>
-  </div>
 
-  <div class="chart">
-    <canvas id="timeChart"></canvas>
-  </div>
+    <div class="chart mb-4">
+      <canvas id="timeChart"></canvas>
+    </div>
 
-  <h3>Payments table</h3>
-  <table id="paymentsTable" border="1" cellpadding="6">
-    <thead><tr><th>Date</th><th>Amount</th><th>Source</th></tr></thead>
-    <tbody></tbody>
-  </table>
+    <h5>Payments table</h5>
+    <div class="table-responsive">
+      <table id="paymentsTable" class="table table-striped table-bordered" style="width:100%">
+        <thead><tr><th>Date</th><th>Amount</th><th>Source</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </div> <!-- /.container -->
 
   <script>
     async function loadData() {
@@ -84,10 +104,52 @@
 
       // Stacked per-source chart
       const stackedCtx = document.getElementById('stackedChart').getContext('2d');
-      new Chart(stackedCtx, {
+      const stackedChart = new Chart(stackedCtx, {
         type: 'bar',
         data: { labels, datasets: sourceDatasets },
         options: { responsive: true, scales: { x: { stacked: true }, y: { stacked: true } } }
+      });
+
+      // Compute totals per source (sum across stocks)
+      const perSourceTotals = sources.map(src => stocks.reduce((acc, s) => acc + (s.per_source[src] || 0), 0));
+
+      // Build an interactive legend matching the stacked chart colors and show totals
+      const legendContainer = document.getElementById('stackedLegend');
+      legendContainer.innerHTML = '';
+      sources.forEach((src, i) => {
+        const color = sourceDatasets[i].backgroundColor;
+        const total = perSourceTotals[i] || 0;
+        const formatted = new Intl.NumberFormat('pl-PL', {minimumFractionDigits:2, maximumFractionDigits:2}).format(total);
+
+        const item = document.createElement('div');
+        item.style.display = 'inline-flex';
+        item.style.alignItems = 'center';
+        item.style.marginRight = '12px';
+        item.style.cursor = 'pointer';
+
+        const swatch = document.createElement('span');
+        swatch.style.display = 'inline-block';
+        swatch.style.width = '14px';
+        swatch.style.height = '14px';
+        swatch.style.marginRight = '6px';
+        swatch.style.background = color;
+        swatch.style.border = '1px solid #666';
+
+        const label = document.createElement('span');
+        label.textContent = `${src} — ${formatted} PLN`;
+
+        item.appendChild(swatch);
+        item.appendChild(label);
+        legendContainer.appendChild(item);
+
+        // Click toggles visibility of the corresponding dataset
+        item.addEventListener('click', () => {
+          const meta = stackedChart.getDatasetMeta(i);
+          meta.hidden = !meta.hidden;
+          // Visual feedback
+          item.style.opacity = meta.hidden ? '0.45' : '1';
+          stackedChart.update();
+        });
       });
 
       // Yearly summary chart
@@ -104,10 +166,29 @@
       const timeCtx = document.getElementById('timeChart').getContext('2d');
       let timeChart = new Chart(timeCtx, { type: 'line', data: { labels: [], datasets: [{ label: 'Amount PLN', data: [], fill: false, borderColor: 'rgba(255,99,132,0.8)' }] }, options: { responsive: true } });
 
+      // Keep a DataTable instance so we can destroy/recreate when table data changes
+      let paymentsTable = null;
+
       sel.addEventListener('change', () => {
         const symbol = sel.value;
         const stock = stocks.find(s => s.symbol === symbol);
-        if (!stock) return;
+        const tbody = document.querySelector('#paymentsTable tbody');
+
+        // If no stock selected, clear table and disable download button
+        if (!stock) {
+          tbody.innerHTML = '';
+          if (paymentsTable) {
+            try { paymentsTable.clear().destroy(); } catch (e) { /* ignore */ }
+            paymentsTable = null;
+          }
+          document.getElementById('downloadSymbol').disabled = true;
+          // clear chart
+          timeChart.data.labels = [];
+          timeChart.data.datasets[0].data = [];
+          timeChart.update();
+          return;
+        }
+        
         const payments = stock.payments.slice().reverse(); // chronological
         timeChart.data.labels = payments.map(p => p.date);
         timeChart.data.datasets[0].data = payments.map(p => p.amount);
@@ -117,31 +198,45 @@
         document.getElementById('downloadSymbol').disabled = false;
 
         // Populate payments table
-        const tbody = document.querySelector('#paymentsTable tbody');
         tbody.innerHTML = '';
         payments.forEach(p => {
           const tr = document.createElement('tr');
           tr.innerHTML = `<td>${p.date}</td><td>${p.amount.toFixed(2)}</td><td>${p.source || ''}</td>`;
           tbody.appendChild(tr);
         });
+        // Debug logging to help diagnose "no data available" issues
+        console.debug('Stock selected:', symbol);
+        console.debug('Payments count:', payments.length);
+        console.debug('First payment sample:', payments[0] || null);
+        // Update DataTable robustly: if it exists, clear/add rows; otherwise create it with data
+        try {
+          const tableData = payments.map(p => [p.date, p.amount, p.source || '']);
+          console.debug('tableData length:', tableData.length);
+          console.debug('paymentsTable exists before update?', !!paymentsTable);
 
-        $(document).ready(function() {
-          // If table already initialized, destroy then recreate
-          if ($.fn.DataTable.isDataTable('#paymentsTable')) {
-            $('#paymentsTable').DataTable().destroy();
+          if (paymentsTable) {
+            // Clear and add rows then redraw
+            paymentsTable.clear();
+            paymentsTable.rows.add(tableData);
+            paymentsTable.draw();
+          } else {
+            // Create new DataTable with initial data
+            paymentsTable = $('#paymentsTable').DataTable({
+              data: tableData,
+              columns: [
+                { title: 'Date' },
+                { title: 'Amount', render: $.fn.dataTable.render.number(',', '.', 2) },
+                { title: 'Source' }
+              ],
+              paging: true,
+              pageLength: 25,
+              searching: true,
+              order: [[0, 'desc']],
+            });
           }
-          $('#paymentsTable').DataTable({
-            paging: true,
-            pageLength: 25,
-            searching: true,
-            order: [[0, 'desc']], // sort by date desc by default
-            columns: [
-              { title: "Date" },
-              { title: "Amount", type: 'num' },
-              { title: "Source" }
-            ]
-          });
-        });
+        } catch (e) {
+          console.warn('DataTables update/init failed', e);
+        }
       });
 
       // Download handlers
