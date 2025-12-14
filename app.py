@@ -18,6 +18,19 @@ except Exception:
     parser = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(parser)
 
+# Import transactions analysis module (same fallback pattern)
+try:
+    from . import transactions as txmod
+except Exception:
+    import importlib.util
+    import pathlib
+    spec = importlib.util.spec_from_file_location(
+        "transactions",
+        str(pathlib.Path(__file__).parent / "transactions.py"),
+    )
+    txmod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(txmod)
+
 
 def get_aggregated_data(input_dir='input'):
     """Parse all CSV files in input_dir and return JSON-serializable aggregation."""
@@ -111,6 +124,138 @@ def create_app(static_folder=None, template_folder=None):
     def api_dividends():
         data = get_aggregated_data()
         return jsonify(data)
+
+    @app.route('/api/transactions')
+    def api_transactions():
+        # Run transactions analysis and return JSON summary (no heavy plotting here)
+        input_path = os.path.expanduser(r'C:\Users\czk\Downloads\hist.csv')
+        try:
+            raw = txmod.read_csv_with_encodings(input_path)
+            df = txmod.normalize_dataframe(raw)
+            stats = txmod.summary_stats(df)
+            # Convert pandas Series to lists/dicts for JSON
+            stats_serializable = dict(stats)
+            stats_serializable['monthly'] = stats['monthly'].to_dict()
+            stats_serializable['daily'] = {str(k): float(v) for k, v in stats['daily'].items()}
+            return jsonify(stats_serializable)
+        except Exception as e:
+            import traceback
+            tb = traceback.format_exc()
+            app.logger.error('Error in /api/transactions: %s', tb)
+            return (jsonify({'error': str(e), 'traceback': tb}), 500)
+
+    @app.route('/transactions')
+    def transactions_ui():
+        # Use caching to avoid regenerating plots on every request.
+        input_path = os.path.expanduser(r'C:\Users\czk\Downloads\hist.csv')
+        cache_dir = os.path.join(app.static_folder, 'transactions')
+        meta_path = os.path.join(cache_dir, 'meta.json')
+
+        def needs_generation() -> bool:
+            # If no cache dir or meta, we need to generate
+            if not os.path.isdir(cache_dir):
+                return True
+            if not os.path.isfile(meta_path):
+                return True
+            try:
+                import json
+                meta = json.load(open(meta_path, 'r', encoding='utf-8'))
+                # Compare mtime of input file
+                if not os.path.exists(input_path):
+                    return True
+                on_disk = os.path.getmtime(input_path)
+                return float(meta.get('input_mtime', 0)) < float(on_disk)
+            except Exception:
+                return True
+
+        def start_background_generation():
+            # Create a background thread to generate plots and write meta.json
+            import threading, json, time
+
+            def worker():
+                lock_path = os.path.join(cache_dir, 'generating.lock')
+                try:
+                    os.makedirs(cache_dir, exist_ok=True)
+                    # touch lock
+                    open(lock_path, 'w').close()
+                    raw = txmod.read_csv_with_encodings(input_path)
+                    df = txmod.normalize_dataframe(raw)
+                    stats = txmod.summary_stats(df)
+                    outputs = txmod.plot_and_save(df, outdir=cache_dir)
+                    # write metadata
+                    meta = {
+                        'input_mtime': os.path.getmtime(input_path),
+                        'generated_at': time.time(),
+                        'outputs': outputs,
+                    }
+                    json.dump(meta, open(os.path.join(cache_dir, 'meta.json'), 'w', encoding='utf-8'))
+                except Exception:
+                    app.logger.exception('Background generation failed')
+                finally:
+                    try:
+                        os.remove(lock_path)
+                    except Exception:
+                        pass
+
+            t = threading.Thread(target=worker, daemon=True)
+            t.start()
+
+        # If generation needed and not already running, start it and show status
+        if needs_generation():
+            lock = os.path.join(cache_dir, 'generating.lock')
+            if not os.path.exists(lock):
+                start_background_generation()
+            # show status page while generating
+            return render_template('transactions_status.html')
+
+        # Otherwise load cached meta and render page with images and stats
+        try:
+            import json
+            meta = json.load(open(meta_path, 'r', encoding='utf-8'))
+            outputs = meta.get('outputs', {})
+            images = [os.path.join('static', 'transactions', os.path.basename(p)) for p in outputs.values()]
+            # Load stats by re-reading file quickly
+            raw = txmod.read_csv_with_encodings(input_path)
+            df = txmod.normalize_dataframe(raw)
+            stats = txmod.summary_stats(df)
+            return render_template('transactions.html', stats=stats, images=images)
+        except Exception as e:
+            app.logger.exception('Failed to render cached transactions')
+            return (f"<h1>Error rendering transactions</h1><pre>{e}</pre>"), 500
+
+    @app.route('/transactions/status')
+    def transactions_status():
+        cache_dir = os.path.join(app.static_folder, 'transactions')
+        lock = os.path.join(cache_dir, 'generating.lock')
+        meta = os.path.join(cache_dir, 'meta.json')
+        status = {
+            'generating': os.path.exists(lock),
+            'has_meta': os.path.exists(meta),
+        }
+        return jsonify(status)
+
+    @app.route('/transactions/regenerate')
+    def transactions_regenerate():
+        cache_dir = os.path.join(app.static_folder, 'transactions')
+        lock = os.path.join(cache_dir, 'generating.lock')
+        # remove meta to force regeneration
+        try:
+            if os.path.exists(lock):
+                return jsonify({'status': 'already generating'}), 202
+            if os.path.isdir(cache_dir):
+                import glob
+                for f in glob.glob(os.path.join(cache_dir, '*')):
+                    try:
+                        os.remove(f)
+                    except Exception:
+                        pass
+            # start background generation by visiting /transactions (it will kick off worker)
+            # but we can also directly start the worker here by invoking logic
+            # For simplicity, redirect to /transactions which will start generation if needed
+            return ("<html><body>Regeneration started. <a href=\"/transactions\">Go back</a></body></html>"), 202
+        except Exception as e:
+            app.logger.exception('Failed to start regeneration')
+            return jsonify({'error': str(e)}), 500
 
     @app.route('/download/all.csv')
     def download_all():

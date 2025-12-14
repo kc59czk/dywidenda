@@ -2,5 +2,8 @@
 Lib
 __pycache__
 include
+share
+input
 *.csv
+*.png
 Scripts
