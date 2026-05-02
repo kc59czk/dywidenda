@@ -2,6 +2,9 @@ import os
 import glob
 from collections import defaultdict
 from flask import Flask, jsonify, render_template, send_from_directory
+import sqlite3
+
+DB_PATH = "dividends.db"
 
 # Reuse existing parser. Support running app.py directly (script) or as a package.
 try:
@@ -32,7 +35,120 @@ except Exception:
     spec.loader.exec_module(txmod)
 
 
+def get_conn():
+    return sqlite3.connect(DB_PATH)
+
+def insert_dividends(rows):
+    conn = get_conn()
+    cur = conn.cursor()
+
+    cur.executemany("""
+        INSERT OR IGNORE INTO dividends
+        (date, ticker, amount, currency, account, source_file)
+        VALUES (?, ?, ?, ?, ?, ?)
+    """, rows)
+
+    conn.commit()
+    conn.close()
+
+def load_all_dividends_from_db():
+    conn = get_conn()
+    cur = conn.cursor()
+
+    cur.execute("""
+        SELECT date, ticker, amount, account, source_file
+        FROM dividends
+    """)
+
+    rows = cur.fetchall()
+    conn.close()
+
+    return rows
+
 def get_aggregated_data(input_dir='input'):
+    """Parse CSVs → store in SQLite → aggregate from DB"""
+
+    pattern = os.path.join(input_dir, '*.csv')
+    files = glob.glob(pattern)
+
+    # 🔹 STEP 1: ingest CSV → SQLite
+    for fpath in files:
+        fname = os.path.basename(fpath)
+        source_name, _ = os.path.splitext(fname)
+
+        try:
+            result = parser.parse_dividend_file(fpath)
+        except Exception:
+            continue
+
+        rows_to_insert = []
+
+        for stock, payments in result.items():
+            for p in payments:
+                rows_to_insert.append((
+                    p['date'].strftime('%Y-%m-%d'),
+                    stock,
+                    float(p['amount']),
+                    p.get('currency', 'PLN'),
+                    source_name,      # treat as account/source
+                    fpath
+                ))
+
+        insert_dividends(rows_to_insert)
+
+    # 🔹 STEP 2: load from DB (single source of truth)
+    db_rows = load_all_dividends_from_db()
+
+    aggregated = defaultdict(list)
+    grand_total = 0.0
+    yearly = defaultdict(lambda: defaultdict(float))
+
+    # 🔹 STEP 3: aggregate
+    for date_str, stock, amount, account, source_file in db_rows:
+        aggregated[stock].append({
+            'date': date_str,
+            'amount': amount,
+            'source': account,
+        })
+
+        grand_total += amount
+
+        year = int(date_str[:4])
+        yearly[year][stock] += amount
+
+    # 🔹 STEP 4: build response
+    stocks = []
+
+    for stock, payments in aggregated.items():
+        total = sum(p['amount'] for p in payments)
+
+        per_source = defaultdict(float)
+        for p in payments:
+            per_source[p['source']] += p['amount']
+
+        stocks.append({
+            'symbol': stock,
+            'total': total,
+            'per_source': dict(per_source),
+            'payments': sorted(payments, key=lambda x: x['date'], reverse=True),
+        })
+
+    stocks.sort(key=lambda s: s['total'], reverse=True)
+
+    yearly_summary = {
+        year: dict(stocks_dict)
+        for year, stocks_dict in sorted(yearly.items())
+    }
+
+    return {
+        'stocks': stocks,
+        'grand_total': grand_total,
+        'yearly': yearly_summary,
+    }
+
+
+
+def DISABLEDget_aggregated_data(input_dir='input'):
     """Parse all CSV files in input_dir and return JSON-serializable aggregation."""
     pattern = os.path.join(input_dir, '*.csv')
     files = glob.glob(pattern)

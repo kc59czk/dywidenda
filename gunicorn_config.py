@@ -1,7 +1,7 @@
 # Simple Gunicorn configuration file with sensible defaults for this app.
 # Adjust `workers` and `threads` according to your deployment environment.
 
-bind = '0.0.0.0:8000'
+bind = '0.0.0.0:8900'
 workers = 2
 threads = 4
 timeout = 30

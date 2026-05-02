@@ -1,9 +1,15 @@
 # Created by venv; see https://docs.python.org/3/library/venv.html
-Lib
-__pycache__
-include
-share
+*venv
+*dividends.db*
+lib
+lib64
 input
-*.csv
-*.png
-Scripts
+.github
+__pycache__
+bin
+share
+include
+*.pyc
+pyvenv.cfg
+.gitignore
+.env
