@@ -13,3 +13,6 @@ include
 pyvenv.cfg
 .gitignore
 .env
+*.png
+*.csv
+meta.json

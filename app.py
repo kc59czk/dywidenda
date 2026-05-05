@@ -147,70 +147,6 @@ def get_aggregated_data(input_dir='input'):
     }
 
 
-
-def DISABLEDget_aggregated_data(input_dir='input'):
-    """Parse all CSV files in input_dir and return JSON-serializable aggregation."""
-    pattern = os.path.join(input_dir, '*.csv')
-    files = glob.glob(pattern)
-
-    aggregated = defaultdict(list)
-    grand_total = 0.0
-
-    for fpath in files:
-        fname = os.path.basename(fpath)
-        source_name, _ = os.path.splitext(fname)
-
-        try:
-            result = parser.parse_dividend_file(fpath)
-        except Exception:
-            # skip files that fail to parse
-            continue
-
-        for stock, payments in result.items():
-            for p in payments:
-                # Convert to JSON-friendly types
-                date_str = p['date'].strftime('%Y-%m-%d')
-                amount = float(p['amount'])
-                aggregated[stock].append({
-                    'date': date_str,
-                    'amount': amount,
-                    'source': source_name,
-                })
-                grand_total += amount
-
-    # Build stocks list with totals and per-source breakdowns
-    stocks = []
-    yearly = defaultdict(lambda: defaultdict(float))  # yearly[year][stock] = total
-    for stock, payments in aggregated.items():
-        total = sum(p['amount'] for p in payments)
-        # per-source totals
-        per_source = defaultdict(float)
-        for p in payments:
-            per_source[p.get('source', 'unknown')] += p['amount']
-            # yearly aggregation
-            year = int(p['date'][:4]) if isinstance(p['date'], str) else p['date'].year
-            yearly[year][stock] += p['amount']
-
-        stocks.append({
-            'symbol': stock,
-            'total': total,
-            'per_source': dict(per_source),
-            'payments': sorted(payments, key=lambda x: x['date'], reverse=True),
-        })
-
-    # Sort stocks by total desc
-    stocks.sort(key=lambda s: s['total'], reverse=True)
-
-    # Build yearly summary list of { year: { stock: total, ... } }
-    yearly_summary = {year: dict(stocks) for year, stocks in sorted(yearly.items())}
-
-    return {
-        'stocks': stocks,
-        'grand_total': grand_total,
-        'yearly': yearly_summary,
-    }
-
-
 def create_app(static_folder=None, template_folder=None):
     # If no template_folder provided, use the templates directory next to this file
     if template_folder is None:
@@ -263,7 +199,7 @@ def create_app(static_folder=None, template_folder=None):
     @app.route('/transactions')
     def transactions_ui():
         # Use caching to avoid regenerating plots on every request.
-        input_path = os.path.expanduser(r'C:\Users\czk\Downloads\hist.csv')
+        input_path = os.path.expanduser(r'./tmp/hist.csv')
         cache_dir = os.path.join(app.static_folder, 'transactions')
         meta_path = os.path.join(cache_dir, 'meta.json')
 

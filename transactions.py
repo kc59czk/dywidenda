@@ -44,7 +44,7 @@ except Exception as e:  # ImportError or similar
 sns.set(style="whitegrid")
 plt.rcParams.update({"figure.max_open_warning": 0})
 
-COMMON_ENCODINGS = ["utf-8", "cp1250", "iso-8859-2", "cp852"]
+COMMON_ENCODINGS = ["utf-8", "cp1250", "iso-8859-2", "cp852", "latin2"]
 
 
 def read_csv_with_encodings(path: str, delimiter: str = ";", decimal: str = ",") -> pd.DataFrame:
@@ -267,7 +267,7 @@ def plot_and_save(df: pd.DataFrame, outdir: str = 'output') -> Dict[str, str]:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog='transactions.py', description='Analyze historical transactions CSV and produce plots.')
-    parser.add_argument('--input', '-i', default='c:\\Users\\czk\\Downloads\\hist.csv', help='Path to input CSV (default: Downloads/hist.csv)')
+    parser.add_argument('--input', '-i', default='./tmp/hist.csv', help='Path to input CSV (default: Downloads/hist.csv)')
     parser.add_argument('--outdir', '-o', default='output', help='Directory to write PNG outputs')
     args = parser.parse_args(argv)
 
